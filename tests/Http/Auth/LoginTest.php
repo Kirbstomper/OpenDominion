@@ -3,82 +3,94 @@
 namespace OpenDominion\Tests\Http\Auth;
 
 use Illuminate\Foundation\Testing\DatabaseMigrations;
-use OpenDominion\Tests\AbstractBrowserKitTestCase;
+use OpenDominion\Tests\AbstractTestCase;
 
-class LoginTest extends AbstractBrowserKitTestCase
+class LoginTest extends AbstractTestCase
 {
     use DatabaseMigrations;
 
     public function testLoginPage()
     {
-        $this->visitRoute('auth.login')
-            ->seeStatusCode(200);
+        $response = $this->get('/auth/login')
+            ->assertStatus(200);
     }
 
     public function testUserCanLogin()
     {
         $user = $this->createUser('secret');
 
-        $this->visitRoute('auth.login')
-            ->see('Login')
-            ->type($user->email, 'email')
-            ->type('secret', 'password')
-            ->press('Login')
-            ->seeRouteIs('dashboard');
+        $response = $this->get('/auth/login')
+            ->assertSeeText('Login');
+
+        $data = [
+            'email' => $user->email,
+            'password' => 'secret'                
+        ];
+        $response = $this->post('/auth/login', $data)
+            ->assertRedirect('/dashboard');
         // todo: see logged in user == $user
     }
 
     public function testUserCanLogout()
     {
-        $this->createAndImpersonateUser();
+        $user = $this->createUser('secret');
 
-        $this->visitRoute('dashboard')
-            ->see('Dashboard')
-            ->press('Logout')
-            ->seeRouteIs('home')
-            ->see('You have been logged out.');
+        $response = $this->actingAs($user)
+            ->get('/dashboard')
+            ->assertSeeText('Dashboard');
+        
+        $response = $this->actingAs($user)
+            ->post('/auth/logout');
+        
+        $response->assertSeeText('You have been logged out.');
     }
-
+    
     public function testUserCantLoginWithInvalidCredentials()
-    {
-        $this->visitRoute('auth.login')
-            ->see('Login')
-            ->type('nonexistant@example.com', 'email')
-            ->type('somepassword', 'password')
-            ->press('Login')
-            ->seeRouteIs('auth.login')
-            ->see('These credentials do not match our records');
+    {   
+        $data = [
+            'email' => 'nonexistant@example.com',
+            'password' => 'somepassword'                
+        ];
+        //$response = $this->get('/auth/login');
+        $response = $this->post('/auth/login', $data);
+        $response->assertRedirect('/auth/login')
+                ->assertSeeText('These credentials do not match our records');
     }
-
+    
     public function testUserCantLoginWhenNotActivated()
     {
+        
         $user = $this->createUser('secret', ['activated' => false]);
 
-        $this->visitRoute('auth.login')
-            ->see('Login')
-            ->type($user->email, 'email')
-            ->type('secret', 'password')
-            ->press('Login')
-            ->seeRouteIs('auth.login')
-            ->see('Your account has not been activated yet. Check your spam folder for the activation email.');
-    }
+        $data = [
+            'email' => $user->email,
+            'password' => 'secret'                
+        ];
 
+        $response = $this->post('/auth/login', $data)
+            ->assertRedirect('/auth/login')
+            ->assertSeeText('Your account has not been activated yet. Check your spam folder for the activation email.');
+    }
+    
     public function testGuestCantAccessProtectedPages()
     {
-        $this->visitRoute('dashboard')
-            ->seeRouteIs('auth.login');
+       $response = $this->get('/dashboard')
+            ->assertRedirect('/auth/login');
 
         // todo: expand?
     }
 
     public function testAuthenticatedUserCantAccessLoginAndRegisterPages()
     {
-        $this->createAndImpersonateUser();
+        $user = $this->createUser('secret');
 
-        $this->visitRoute('auth.login')
-            ->seeRouteIs('home');
+        $this->actingAs($user)
+            ->get('/auth/login')
+            ->assertRedirect('/');
 
-        $this->visitRoute('auth.register')
-            ->seeRouteIs('home');
+        $this->actingAs($user)
+            ->get('/auth/register')
+            ->assertRedirect('/');
     }
+    
 }
